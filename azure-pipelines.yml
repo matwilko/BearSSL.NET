@@ -1,0 +1,173 @@
+trigger:
+- master
+
+stages:
+
+- stage: linux_x64
+  displayName: Native Build (linux-x64)
+  dependsOn: []
+  jobs:
+  - job:
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
+      clean: true
+      lfs: true
+      submodules: true
+    - script: make CONF=Unix STATICLIB=no TOOLS=no TESTS=no D=.linux.x64.so DP=
+      displayName: Build x64 native library
+      workingDirectory: BearSSL
+    - publish: $(System.DefaultWorkingDirectory)/BearSSL/build/bearssl.linux.x64.so
+      artifact: bearssl.linux.x64.so
+      
+
+- stage: linux_x86
+  displayName: Native Build (linux-x86)
+  dependsOn: []
+  jobs:
+  - job:
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
+      clean: true
+      lfs: true
+      submodules: true
+    - script: DEBIAN_FRONTEND=noninteractive sudo apt-get -y install gcc-multilib
+      displayName: Install GCC x86 tools
+    - script: make CONF=Unix32 STATICLIB=no TOOLS=no TESTS=no D=.linux.x86.so DP=
+      displayName: Build x86 native library
+      workingDirectory: BearSSL
+    - publish: $(System.DefaultWorkingDirectory)/BearSSL/build32/bearssl.linux.x86.so
+      artifact: bearssl.linux.x86.so
+
+- stage: win_x64
+  displayName: Native Build (win-x64)
+  dependsOn: []
+  jobs:
+  - job:
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: self
+      clean: true
+      lfs: true
+      submodules: true
+    - script: dotnet msbuild /t:GenerateExports
+      displayName: Generate DEF export file
+      workingDirectory: '$(System.DefaultWorkingDirectory)/BearSSL.NET'
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: $(System.DefaultWorkingDirectory)/BearSSL.NET/obj/
+        Contents: linkcommands
+        TargetFolder: $(System.DefaultWorkingDirectory)/BearSSL
+    - script: >
+        "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64 && 
+        nmake CONF=Win TOOLS=no TESTS=no D=.win.x64.dll LDDLLFLAGS=" /NOLOGO /LD /MT @linkcommands"
+      displayName: Build x64 native library
+      workingDirectory: BearSSL
+    - publish: $(System.DefaultWorkingDirectory)/BearSSL/build/bearssl.win.x64.dll
+      artifact: bearssl.win.x64.dll
+
+- stage: win_x86
+  displayName: Native Build (win-x86)
+  dependsOn: []
+  jobs:
+  - job:
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: self
+      clean: true
+      lfs: true
+      submodules: true
+    - script: dotnet msbuild /t:GenerateExports
+      displayName: Generate DEF export file
+      workingDirectory: '$(System.DefaultWorkingDirectory)/BearSSL.NET'
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(System.DefaultWorkingDirectory)/BearSSL.NET/obj/'
+        Contents: linkcommands
+        TargetFolder: '$(System.DefaultWorkingDirectory)/BearSSL'
+    - script: >
+        "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x86 && 
+        nmake CONF=Win TOOLS=no TESTS=no D=.win.x86.dll LDDLLFLAGS=" /NOLOGO /LD /MT @linkcommands"
+      displayName: Build x86 native library
+      workingDirectory: BearSSL
+    - publish: $(System.DefaultWorkingDirectory)/BearSSL/build/bearssl.win.x86.dll
+      artifact: bearssl.win.x86.dll
+
+- stage: osx_x64
+  displayName: Native Build (osx-x64)
+  dependsOn: []
+  jobs:
+  - job:
+    pool:
+      vmImage: 'macOS-latest'
+    steps:
+    - checkout: self
+      clean: true
+      lfs: true
+      submodules: true
+    - script: make CONF=Unix STATICLIB=no TOOLS=no TESTS=no D=.osx.x64.dylib DP=
+      displayName: Build x64 native library
+      workingDirectory: BearSSL
+    - publish: $(System.DefaultWorkingDirectory)/BearSSL/build/bearssl.osx.x64.dylib
+      artifact: bearssl.osx.x64.dylib
+
+- stage: library
+  displayName: Build Library
+  dependsOn:
+  - linux_x64
+  - linux_x86
+  - win_x64
+  - win_x86
+  - osx_x64
+  jobs:
+  - job:
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: self
+      clean: true
+      lfs: true
+      submodules: true
+    - download: current
+      artifact: bearssl.linux.x64.so
+    - download: current
+      artifact: bearssl.linux.x86.so
+    - download: current
+      artifact: bearssl.win.x64.dll
+    - download: current
+      artifact: bearssl.win.x86.dll
+    - download: current
+      artifact: bearssl.osx.x64.dylib
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: $(Pipeline.Workspace)
+        Contents: |
+          bearssl.linux.x64.so/bearssl.linux.x64.so
+          bearssl.linux.x86.so/bearssl.linux.x86.so
+          bearssl.win.x64.dll/bearssl.win.x64.dll
+          bearssl.win.x86.dll/bearssl.win.x86.dll
+          bearssl.osx.x64.dylib\bearssl.osx.x64.dylib
+        TargetFolder: $(System.DefaultWorkingDirectory)/BearSSL.NET
+        flattenFolders: true
+    - task: DotNetCoreCLI@2
+      displayName: Build and Pack .NET Library
+      inputs:
+        command: 'pack'
+        verbosityPack: 'Quiet'
+        packagesToPack: 'BearSSL.NET/BearSSL.NET.csproj'
+        versioningScheme: 'byPrereleaseNumber'
+        majorVersion: '0'
+        minorVersion: '1'
+        patchVersion: '0'
+    - task: DotNetCoreCLI@2
+      displayName: Push NuGet package
+      inputs:
+        command: 'push'
+        packagesToPush: '$(Build.ArtifactStagingDirectory)/*.nupkg'
+        nuGetFeedType: 'internal'
+        publishVstsFeed: '0b63c0e5-625e-4975-8522-8c2a73d5d72e'

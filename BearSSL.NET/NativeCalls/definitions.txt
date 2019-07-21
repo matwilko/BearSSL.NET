@@ -1,0 +1,1 @@
+﻿void* br_get_config()

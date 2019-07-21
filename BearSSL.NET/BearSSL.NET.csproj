@@ -1,0 +1,74 @@
+﻿<Project Sdk="MSBuild.Sdk.Extras/2.0.31;RoslynCodeTaskFactory/2.0.7">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <RuntimeIdentifiers>win-x86;win-x64;linux-x86;linux-x64;osx-x64</RuntimeIdentifiers>
+    <ExtrasBuildEachRuntimeIdentifier>true</ExtrasBuildEachRuntimeIdentifier>
+    <RootNamespace>BearSSL</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.5.3" />
+
+    <ReferenceAssemblyProjectReference Include="..\BearSSL.NET.ref\BearSSL.NET.ref.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="NativeCalls/*.cs" />
+    <None Include="NativeCalls/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="bearssl.linux.x86.so">
+      <CopyToOutputDirectory Condition="'$(RuntimeIdentifier)' == 'linux-x86'">PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/linux-x86/native</PackagePath>
+    </None>
+    <None Include="bearssl.linux.x64.so">
+      <CopyToOutputDirectory Condition="'$(RuntimeIdentifier)' == 'linux-x64'">PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/linux-x64/native</PackagePath>
+    </None>
+    <None Include="bearssl.win.x86.dll">
+      <CopyToOutputDirectory Condition="'$(RuntimeIdentifier)' == 'win-x86'">PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/win-x86/native</PackagePath>
+    </None>
+    <None Include="bearssl.win.x64.dll">
+      <CopyToOutputDirectory Condition="'$(RuntimeIdentifier)' == 'win-x64'">PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/win-x64/native</PackagePath>
+    </None>
+    <None Include="bearssl.osx.x64.dylib">
+      <CopyToOutputDirectory Condition="'$(RuntimeIdentifier)' == 'osx-x64'">PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/osx-x64/native</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <UsingTask TaskName="GenerateNativeCalls" TaskFactory="CodeTaskFactory" AssemblyFile="$(RoslynCodeTaskFactory)">
+    <Task>
+        <Code Type="Class" Language="cs" Source="NativeCalls/GenerateNativeCalls.cs" />
+    </Task>
+  </UsingTask>
+
+  <Target Name="GenerateNativeCalls" BeforeTargets="ResolveProjectReferences">
+    <GenerateNativeCalls GenerationFile="NativeCalls/definitions.txt" IntermediateOutputPath="$(BaseIntermediateOutputPath)\nativecalls">
+        <Output TaskParameter="GeneratedFiles" ItemName="Compile" />
+    </GenerateNativeCalls>
+  </Target>
+
+  <UsingTask TaskName="GenerateExports" TaskFactory="CodeTaskFactory" AssemblyFile="$(RoslynCodeTaskFactory)">
+    <Task>
+        <Code Type="Class" Language="cs" Source="NativeCalls/GenerateExports.cs" />
+    </Task>
+  </UsingTask>
+
+  <Target Name="GenerateExports" Condition="'$(RuntimeIdentifier)' == ''">
+    <GenerateExports GenerationFile="NativeCalls/definitions.txt" IntermediateOutputPath="$(BaseIntermediateOutputPath)" />
+  </Target>
+</Project>
